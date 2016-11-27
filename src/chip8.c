@@ -2,8 +2,16 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
+#include <allegro5/allegro.h>
+#include <allegro5/allegro_image.h>
+
+typedef uint32_t Uint32;
 
 #define MEMSIS 4096
+
+const int LARGURA_TELA = 640;
+const int ALTURA_TELA = 320;
 
 struct maquina_t {
     uint8_t mem[MEMSIS];     // Banco de memoria disponivel pela CPU
@@ -15,7 +23,16 @@ struct maquina_t {
     uint8_t v[16];           // 16 registradores para uso geral (Vx...VF)
     uint8_t i;               // Registrador especial de direcionamento I
     uint8_t dt, st;          // Temporizadores
+
+    char tela[2048];         // Tela
 };
+
+static void ex(char* from, Uint32* to){
+    for (int i = 0; i < 2048; i++) {
+        to[i] = (from[i]) ? -1 : 0;
+    }
+}
+
 
 void inic_maquina(struct maquina_t* maquina)
 {
@@ -52,12 +69,48 @@ void carrega_rom(struct maquina_t* maquina)
   fclose(fp);
 }
 
+
 int main(int argc, const char * argv[])
 {
+    ALLEGRO_DISPLAY *janela = NULL;
+    ALLEGRO_EVENT_QUEUE *fila_eventos = NULL;
     struct maquina_t maq;
+    int sair = 0;
+
+
     inic_maquina(&maq);
     carrega_rom(&maq);
-    int sair = 0;
+    srand(time(NULL));
+    for (int i = 0; i < 2048; i++)
+        maq.tela[i] = (rand() & 1);
+
+
+    if (!al_init())
+    {
+        fprintf(stderr, "Falha ao inicializar a Allegro.\n");
+        return -1;
+    }
+
+    janela = al_create_display(LARGURA_TELA, ALTURA_TELA);
+    if (!janela)
+    {
+        fprintf(stderr, "Falha ao criar janela.\n");
+        return -1;
+    }
+
+    fila_eventos = al_create_event_queue();
+    if (!fila_eventos)
+    {
+        fprintf(stderr, "Falha ao criar fila de eventos.\n");
+        al_destroy_display(janela);
+        return -1;
+    }
+
+    al_register_event_source(fila_eventos, al_get_display_event_source(janela));
+
+    al_flip_display();
+
+
     while (!sair) {
         // Ler o próximo opcode da memoria
         uint16_t opcode = (maq.mem[maq.pc] << 8) | maq.mem[maq.pc + 1];
@@ -78,7 +131,7 @@ int main(int argc, const char * argv[])
         switch (p) {
           case 0:
               if (opcode == 0x00E0) {
-                printf("CLS\n");
+                //CLS
               } else if (opcode == 0x00EE) {
                printf("RET\n");
               }
@@ -174,7 +227,7 @@ int main(int argc, const char * argv[])
                 break;
             case 0xB:
                 //JP V0, nnn: pc = v[0] + nnn
-                maq.pc = maq.v[0] + nnn;
+                maq.pc = (maq.v[0] + nnn & 0xFFF);
                 break;
             case 0xC:
                 printf("RND %x, %x\n", x, kk);
@@ -227,6 +280,26 @@ int main(int argc, const char * argv[])
           }
 
         }
+
+    while (1)
+    {
+        ALLEGRO_EVENT evento;
+        ALLEGRO_TIMEOUT timeout;
+        al_init_timeout(&timeout, 0.05);
+
+        int tem_eventos = al_wait_for_event_until(fila_eventos, &evento, &timeout);
+
+        if (tem_eventos && evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
+        {
+            break;
+        }
+
+        al_flip_display();
+    }
+
+    al_destroy_display(janela);
+    al_destroy_event_queue(fila_eventos);
+
 
   return 0;
 }
