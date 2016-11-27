@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #define MEMSIS 4096
 
@@ -20,12 +21,18 @@ void inic_maquina(struct maquina_t* maquina)
 {
     maquina->sp = maquina->i = maquina->dt = maquina->st = 0x00;
     maquina->pc = 0x200;
-    for (int i = 0; i < MEMSIS; i++)
+
+    memset(maquina->mem, 0, MEMSIS);
+    memset(maquina->pilha, 0, 32);
+    memset(maquina->v, 0, 16);
+
+
+    /*for (int i = 0; i < MEMSIS; i++)
         maquina->mem[i] = 0x00;
     for (int i = 0; i < 16; i++) {
         maquina->pilha[i] = 0;
         maquina->v[i] = 0;
-    }
+    }*/
 }
 
 void carrega_rom(struct maquina_t* maquina)
@@ -52,13 +59,15 @@ int main(int argc, const char * argv[])
     carrega_rom(&maq);
     int sair = 0;
     while (!sair) {
-        // Ler opcode
+        // Ler o próximo opcode da memoria
         uint16_t opcode = (maq.mem[maq.pc] << 8) | maq.mem[maq.pc + 1];
-        //printf("%x\n", opcode);
+        maq.pc = (maq.pc + 2) & 0xFFF;
+
+        /*printf("%x\n", opcode);
         maq.pc += 2;
         if(maq.pc == MEMSIS)
-           maq.pc = 0;
-           
+           maq.pc = 0;*/
+
         uint16_t nnn = opcode & 0x0FFF;
         uint8_t kk = opcode & 0xFF;
         uint8_t n = opcode & 0xF;
@@ -75,65 +84,97 @@ int main(int argc, const char * argv[])
               }
               break;
           case 1:
-              printf("JP %x\n", nnn);
+              // JP nnn: contador para nnn
+              maq.pc = nnn;
               break;
           case 2:
               printf("CALL %x\n", nnn);
               break;
           case 3:
-              printf("SE %x, %x\n", x, kk);
+              //SE x, kk: if v[x] == kk -> pc += 2
+              if (maq.v[x] == kk)
+                  maq.pc = (maq.pc + 2) & 0xFFF;
               break;
           case 4:
-              printf("SNE %x, %x\n", x, kk);
+              // SNE x, kk: if v[x] != kk -> pc += 2
+              if (maq.v[x] != kk)
+                  maq.pc = (maq.pc + 2) & 0xFFF;
               break;
           case 5:
-              printf("SE %x, %x\n", x, y);
+              //SE x, y: if v[x] == v[y] -> pc += 2
+              if (maq.v[x] == maq.v[y])
+                  maq.pc = (maq.pc + 2) & 0xFFF;
               break;
           case 6:
-              printf("LD %x, %x\n", x, kk);
+              //LD x, kk: v[x] = kk
+              maq.v[x] = kk;
               break;
           case 7:
-              printf("ADD %x, %x\n", x, kk);
+              //ADD x, kk: v[x] = (v[x] + kk) & 0xFF
+              maq.v[x] = (maq.v[x] + kk) & 0xFF;
               break;
           case 8:
               switch (n) {
                 case 0:
-                    printf("LD %x, %x\n", x, y);
+                    //LD x, y: v[x] = v[y]
+                    maq.v[x] = maq.v[y];
                     break;
                 case 1:
-                    printf("OR %x, %x\n", x, y);
+                    //OR x, y: v[x] = v[x] | v[y]
+                    //   1011 0100
+                    //   0100 0110
+                    //   ---------
+                    //   1111 0110
+                    maq.v[x] |= maq.v[y];
                     break;
                 case 2:
-                    printf("AND %x, %x\n", x, y);
+                    //AND x, y: v[x] = v[x] & v[y]
+                    maq.v[x] &= maq.v[y];
                     break;
                 case 3:
-                    printf("XOR %x, %x\n", x, y);
+                    //XOR x, y: v[x] = v[x] ^^ v[y]
+                    maq.v[x] ^= maq.v[y];
                     break;
                 case 4:
-                    printf("ADD %x, %x\n", x, y);
+                    //ADD x, y: v[x] += v[y]
+                    maq.v[0xF] = (maq.v[x] > maq.v[x] + maq.v[y]);
+                    maq.v[x] += maq.v[y];
                     break;
                 case 5:
-                    printf("SUB %x, %x\n", x, y);
+                    //SUB x, y: v[x] -= v[y]
+                    maq.v[0xF] = (maq.v[x] > maq.v[y]);
+                    maq.v[x] -= maq.v[y];
                     break;
                 case 6:
-                    printf("SHR %x\n", x);
+                    //SHR x: v[x] = v[x] >> 1
+                    maq.v[0xF] = (maq.v[x] & 1);
+                    maq.v[x] >>= 1;
                     break;
                 case 7:
-                    printf("SUBN %x, %x\n", x, y);
+                    //SUBN x, y: v[y] - v[x]
+                    maq.v[0xF] = (maq.v[y] > maq.v[x]);
+                    maq.v[x] = maq.v[y] - maq.v[x];
                     break;
                 case 0xE:
-                    printf("SHL %x\n", x);
+                    //SHL x: v[x] = v[x] << 1
+                    maq.v[0xF] = ((maq.v[x] & 0x80) != 0);
+                    maq.v[x] <<= 1;
                     break;
               }
               break;
             case 9:
-                printf("SNE %x, %x\n", x, y);
-                break;
+                //SNE x, y: v[x] != v[y] -> pc += 2
+                if (maq.v[x] != maq.v[y])
+                    maq.pc = (maq.pc + 2) & 0xFFF;
+                  break;
             case 0xA:
+                //LD I, x: I = nnn
+                maq.i = nnn;
                 printf("LD I, %x\n", nnn);
                 break;
             case 0xB:
-                printf("JP V0, %x\n", nnn);
+                //JP V0, nnn: pc = v[0] + nnn
+                maq.pc = maq.v[0] + nnn;
                 break;
             case 0xC:
                 printf("RND %x, %x\n", x, kk);
@@ -151,19 +192,23 @@ int main(int argc, const char * argv[])
             case 0xF:
                 switch (kk) {
                   case 0x07:
-                      printf("LD %x, DT\n", x);
+                      //LD V[x], DT: v[x] = DT
+                      maq.v[x] = maq.dt;
                       break;
                   case 0x0A:
                       printf("LD %x, K\n", x);
                       break;
                   case 0x15:
-                      printf("LD DT, %x\n", x);
+                      //LD DT: v[x] -> DT = v[x]
+                      maq.dt = maq.v[x];
                       break;
                   case 0x18:
-                      printf("LD ST, %x\n", x);
+                      //LD ST, v[x] -> ST = v[x]
+                      maq.st = maq.v[x];
                       break;
                   case 0x1E:
-                      printf("ADD I, %x\n", x);
+                      //ADD I, v[x] -> += v[x]
+                      maq.i += maq.v[x];
                       break;
                   case 0x29:
                       printf("LD F, %x\n", x);
