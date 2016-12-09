@@ -4,9 +4,6 @@
 #include <string.h>
 #include <time.h>
 #include <allegro5/allegro.h>
-#include <allegro5/allegro_image.h>
-
-typedef uint32_t Uint32;
 
 #define MEMSIS 4096
 
@@ -24,14 +21,9 @@ struct maquina_t {
     uint8_t i;               // Registrador especial de direcionamento I
     uint8_t dt, st;          // Temporizadores
 
-    char tela[2048];         // Tela
+    char tela[2048];
 };
 
-static void ex(char* from, Uint32* to){
-    for (int i = 0; i < 2048; i++) {
-        to[i] = (from[i]) ? -1 : 0;
-    }
-}
 
 
 void inic_maquina(struct maquina_t* maquina)
@@ -43,13 +35,6 @@ void inic_maquina(struct maquina_t* maquina)
     memset(maquina->pilha, 0, 32);
     memset(maquina->v, 0, 16);
 
-
-    /*for (int i = 0; i < MEMSIS; i++)
-        maquina->mem[i] = 0x00;
-    for (int i = 0; i < 16; i++) {
-        maquina->pilha[i] = 0;
-        maquina->v[i] = 0;
-    }*/
 }
 
 void carrega_rom(struct maquina_t* maquina)
@@ -72,54 +57,75 @@ void carrega_rom(struct maquina_t* maquina)
 
 int main(int argc, const char * argv[])
 {
-    ALLEGRO_DISPLAY *janela = NULL;
-    ALLEGRO_EVENT_QUEUE *fila_eventos = NULL;
+
     struct maquina_t maq;
     int sair = 0;
 
-
-    inic_maquina(&maq);
-    carrega_rom(&maq);
-    srand(time(NULL));
-    for (int i = 0; i < 2048; i++)
-        maq.tela[i] = (rand() & 1);
-
+    ALLEGRO_DISPLAY *janela = NULL;
+    ALLEGRO_EVENT_QUEUE *fila_eventos = NULL;
 
     if (!al_init())
     {
-        fprintf(stderr, "Falha ao inicializar a Allegro.\n");
-        return -1;
+      fprintf(stderr, "Falha ao inicializar a Allegro.\n");
+      return -1;
     }
+
 
     janela = al_create_display(LARGURA_TELA, ALTURA_TELA);
     if (!janela)
     {
-        fprintf(stderr, "Falha ao criar janela.\n");
-        return -1;
+      fprintf(stderr, "Falha ao criar janela.\n");
+      return -1;
     }
+
 
     fila_eventos = al_create_event_queue();
     if (!fila_eventos)
     {
-        fprintf(stderr, "Falha ao criar fila de eventos.\n");
-        al_destroy_display(janela);
-        return -1;
+      fprintf(stderr, "Falha ao criar fila de eventos.\n");
+      al_destroy_display(janela);
+      return -1;
     }
 
     al_register_event_source(fila_eventos, al_get_display_event_source(janela));
 
-    al_flip_display();
+    //Inicia Emulador
+    inic_maquina(&maq);
+    carrega_rom(&maq);
+    srand(time(NULL));
 
 
     while (!sair) {
+
+      //  configura uma localização aleatória
+        int a = rand() % LARGURA_TELA;
+        int b = rand() % ALTURA_TELA;
+        //configura uma cor aleatória
+        int red_color = rand() % 190;
+        int green_color = rand() % 255;
+        int blue_color = rand() % 1;
+        al_put_pixel(a, b, al_map_rgb(red_color, green_color, blue_color ));
+        
+
+        al_flip_display();
+
+
+
+        ALLEGRO_EVENT evento;
+        ALLEGRO_TIMEOUT timeout;
+        al_init_timeout(&timeout, 0.05);
+
+        int tem_eventos = al_wait_for_event_until(fila_eventos, &evento, &timeout);
+
+        if (tem_eventos && evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
+        {
+            break;
+        }
+
+
         // Ler o próximo opcode da memoria
         uint16_t opcode = (maq.mem[maq.pc] << 8) | maq.mem[maq.pc + 1];
         maq.pc = (maq.pc + 2) & 0xFFF;
-
-        /*printf("%x\n", opcode);
-        maq.pc += 2;
-        if(maq.pc == MEMSIS)
-           maq.pc = 0;*/
 
         uint16_t nnn = opcode & 0x0FFF;
         uint8_t kk = opcode & 0xFF;
@@ -132,8 +138,10 @@ int main(int argc, const char * argv[])
           case 0:
               if (opcode == 0x00E0) {
                 //CLS
+                memset(maq.tela,0,2048);
               } else if (opcode == 0x00EE) {
-               printf("RET\n");
+                if (maq.sp > 0)
+                    maq.pc = maq.pilha[--maq.sp];
               }
               break;
           case 1:
@@ -141,7 +149,9 @@ int main(int argc, const char * argv[])
               maq.pc = nnn;
               break;
           case 2:
-              printf("CALL %x\n", nnn);
+              if (maq.sp < 16)
+                  maq.pilha[maq.sp++] = maq.pc;
+              maq.pc = nnn;
               break;
           case 3:
               //SE x, kk: if v[x] == kk -> pc += 2
@@ -223,17 +233,23 @@ int main(int argc, const char * argv[])
             case 0xA:
                 //LD I, x: I = nnn
                 maq.i = nnn;
-                printf("LD I, %x\n", nnn);
                 break;
             case 0xB:
                 //JP V0, nnn: pc = v[0] + nnn
-                maq.pc = (maq.v[0] + nnn & 0xFFF);
+                maq.pc = (maq.v[0] + nnn) & 0xFFF;
                 break;
             case 0xC:
-                printf("RND %x, %x\n", x, kk);
+                maq.v[x] = rand() & kk;
                 break;
             case 0xD:
-                printf("DRW %x, %x, %x\n", x, y, n);
+                for (int j = 0; j < n; j++) {
+                    uint8_t sprite = maq.mem[maq.i];
+                    for (int i = 0; i < 7; i++) {
+                        int px = (maq.v[x] + i) & 63;
+                        int py = (maq.v[y] + j) & 31;
+                        maq.tela[64 * py + px] = (sprite & (1 << (7-1))) != 0;
+                    }
+                }
                 break;
             case 0xE:
                 if (kk == 0x9E) {
@@ -281,25 +297,8 @@ int main(int argc, const char * argv[])
 
         }
 
-    while (1)
-    {
-        ALLEGRO_EVENT evento;
-        ALLEGRO_TIMEOUT timeout;
-        al_init_timeout(&timeout, 0.05);
-
-        int tem_eventos = al_wait_for_event_until(fila_eventos, &evento, &timeout);
-
-        if (tem_eventos && evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
-        {
-            break;
-        }
-
-        al_flip_display();
-    }
-
-    al_destroy_display(janela);
-    al_destroy_event_queue(fila_eventos);
-
+        al_destroy_display(janela);
+        al_destroy_event_queue(fila_eventos);
 
   return 0;
 }
