@@ -97,7 +97,7 @@ int main(int argc, const char * argv[])
 
     while (!sair) {
 
-      //  configura uma localização aleatória
+        //configura uma localização aleatória
         int a = rand() % LARGURA_TELA;
         int b = rand() % ALTURA_TELA;
         //configura uma cor aleatória
@@ -105,11 +105,8 @@ int main(int argc, const char * argv[])
         int green_color = rand() % 255;
         int blue_color = rand() % 1;
         al_put_pixel(a, b, al_map_rgb(red_color, green_color, blue_color ));
-        
 
         al_flip_display();
-
-
 
         ALLEGRO_EVENT evento;
         ALLEGRO_TIMEOUT timeout;
